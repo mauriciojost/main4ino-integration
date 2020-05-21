@@ -14,13 +14,15 @@ cd $root_dir
 
 git submodule update --init --recursive
 
-bash main4ino-server/misc/scripts/configgen/update
-cp -f src/main/resources/defaultconfig/* $config_dir
-cp -f main4ino-server/misc/scripts/configgen/security.conf $config_dir
+bash $root_dir/main4ino-server/misc/scripts/configgen/update
+cp -f $root_dir/main4ino-server/src/main/resources/defaultconfig/* $config_dir
+cp -f $root_dir/main4ino-server/misc/scripts/configgen/security.conf $config_dir
 
+cd $root_dir/main4ino-server
 sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &
 
 cd $root_dir/botino-arduino
 ./.mavarduino/create_links
+./pull_dependencies -p -l
 sleep 10
 ./simulate profiles/simulate.prof
