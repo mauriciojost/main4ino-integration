@@ -25,4 +25,9 @@ cd $root_dir/botino-arduino
 ./.mavarduino/create_links
 ./pull_dependencies -p -l
 sleep 10
-./simulate profiles/simulate.prof
+cp profiles/simulate.prof $config_dir/simulate.prof 
+echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
+echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
+echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
+
+./simulate $config_dir/simulate.prof
