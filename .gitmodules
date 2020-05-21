@@ -1,0 +1,9 @@
+[submodule "main4ino-server"]
+	path = main4ino-server
+	url = https://github.com/mauriciojost/main4ino-server.git
+[submodule "botino-arduino"]
+	path = botino-arduino
+	url = https://github.com/mauriciojost/botino-arduino.git
+[submodule "sleepino-arduino"]
+	path = sleepino-arduino
+	url = https://github.com/mauriciojost/sleepino.git
