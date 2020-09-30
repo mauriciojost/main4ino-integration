@@ -12,23 +12,32 @@ config_dir=$root_dir/config
 mkdir -p $config_dir
 cd $root_dir
 
+echo "# Pull integrator dependencies..."
 git submodule update --init --recursive
 
-bash $root_dir/main4ino-server/misc/scripts/configgen/update
-cp -f $root_dir/main4ino-server/src/main/resources/defaultconfig/* $config_dir
+echo "# Generate configuration..."
+bash $root_dir/main4ino-server/misc/scripts/configgen/update &> $root_dir/msu.log 
 cp -f $root_dir/main4ino-server/misc/scripts/configgen/security.conf $config_dir
+cp -f $root_dir/main4ino-server/src/main/resources/defaultconfig/* $config_dir
 
+echo "# Launch server..."
 cd $root_dir/main4ino-server
 rm -f dbh2.mv.db
-sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &
+sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &> $root_dir/mss.log &
 
+echo "# Pull arduino project dependencies..."
 cd $root_dir/botino-arduino
 ./.mavarduino/create_links
 ./pull_dependencies -p -l
 sleep 10
+
+echo "# Launch arduino simulator..."
+cat $root_dir/ms.log
 cp profiles/simulate.prof $config_dir/simulate.prof 
 echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
 echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
 echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
 
 ./simulate $config_dir/simulate.prof
+
+echo "# Done."
