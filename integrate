@@ -19,6 +19,7 @@ cp -f $root_dir/main4ino-server/src/main/resources/defaultconfig/* $config_dir
 cp -f $root_dir/main4ino-server/misc/scripts/configgen/security.conf $config_dir
 
 cd $root_dir/main4ino-server
+rm -f dbh2.mv.db
 sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &
 
 cd $root_dir/botino-arduino
