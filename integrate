@@ -38,6 +38,7 @@ echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/si
 echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
 echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
 
-./simulate $config_dir/simulate.prof
+./simulate $config_dir/simulate.prof 0 1000
 
-echo "# Done."
+echo '# Done.'
+
