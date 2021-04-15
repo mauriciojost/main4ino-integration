@@ -4,39 +4,79 @@ set -e
 set -u
 set -x
 
+
+
+function usage() {
+    log "assembly_sbt.sh [ -a airline ] [ -t target1,target2,...,targetn ] [ -s sbtopts ] [ -c ] [ -l ]"
+}
+
+while getopts "a:t:s:p:cdoliz" OPT; do
+    case "$OPT" in
+        a) AIRLINE_CODE="${OPTARG}";;
+        t) TARGETS_STR="${OPTARG}";;
+        s) SBTOPTS="${OPTARG}";;
+        c) COVERAGE="coverage";;
+        d) PUBLISH_DOC="Y";;
+        p) PROJECT_ID="${OPTARG}";;
+        o) OVERRIDE="Y";;
+        l) CROSS_COMPILE="+";;
+        i) IGNORE_TESTS="Y";;
+        z) PUBLISH_ASSEMBLY="N";;
+        *) usage; exit 1;;
+    esac
+done
+
+
 export TERM=xterm-color
 
 root_dir=$(readlink -e $(dirname $0))
 config_dir=$root_dir/config
+m4is=$root_dir/main4ino-server
 
-mkdir -p $config_dir
+server_port=$(cat $m4is/src/main/resources/defaultconfig/application.conf | grep port | awk '{print $3}')
+
 cd $root_dir
 
 echo "# Pull integrator dependencies..."
 git submodule update --init --recursive
 
-echo "# Generate configuration..."
-bash $root_dir/main4ino-server/misc/scripts/configgen/update &> $root_dir/msu.log 
-cp -f $root_dir/main4ino-server/misc/scripts/configgen/security.conf $config_dir
-cp -f $root_dir/main4ino-server/src/main/resources/defaultconfig/* $config_dir
+if [ ! -d $config_dir ]
+then
+  echo "# Generating server configuration at: $config_dir..."
+  mkdir -p $config_dir
+  bash $m4is/misc/scripts/configgen/update 1>&2 | tee $root_dir/msu.log 
+  cp -f $m4is/misc/scripts/configgen/security.conf $config_dir
+  cp -f $m4is/src/main/resources/defaultconfig/* $config_dir
+else
+  echo "# Reusing server configuration at: $config_dir (remove directory to regenerate)"
+fi
 
 echo "# Launch server..."
-jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill %
-cd $root_dir/main4ino-server
+jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill -9 %
+cd $m4is
 rm -f dbh2.mv.db
 sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' 1>&2 | tee $root_dir/mss.log &
 
-echo "# Pull arduino-project dependencies..."
 cd $root_dir/arduino-project
-./.mavarduino/create_links
-./pull_dependencies -p -l
-sleep 30
+if [ ! -e $config_dir/simulate.prof ]
+then
+  echo "# Pull arduino-project dependencies..."
+  ./.mavarduino/create_links
+  ./pull_dependencies -p -l
+  echo "# Generate arduino-project configuration..."
+  cat profiles/simulate.prof | grep -v MAIN4INOSERVER_API_HOST_BASE | grep -v  SIMULATOR_ > $config_dir/simulate.prof 
+  echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
+  echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
+  echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
+else
+  echo "# Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
+fi
 
-echo "# Launch arduino-project simulator..."
-cat profiles/simulate.prof | grep -v MAIN4INOSERVER_API_HOST_BASE | grep -v  SIMULATOR_ > $config_dir/simulate.prof 
-echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
-echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
-echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
+while ! nc -z localhost $server_port; do
+  echo "Waiting for main4ino-server to expose on port $server_port ..."
+  sleep 1 # wait for 1/10 of the second before check again
+done
+
 
 ./simulate $config_dir/simulate.prof 0 1000
 
