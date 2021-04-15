@@ -26,13 +26,13 @@ cd $root_dir/main4ino-server
 rm -f dbh2.mv.db
 sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' 1>&2 | tee $root_dir/mss.log &
 
-echo "# Pull arduino project dependencies..."
+echo "# Pull arduino-project dependencies..."
 cd $root_dir/arduino-project
 ./.mavarduino/create_links
 ./pull_dependencies -p -l
 sleep 30
 
-echo "# Launch arduino simulator..."
+echo "# Launch arduino-project simulator..."
 cat profiles/simulate.prof | grep -v MAIN4INOSERVER_API_HOST_BASE | grep -v  SIMULATOR_ > $config_dir/simulate.prof 
 echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
 echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
