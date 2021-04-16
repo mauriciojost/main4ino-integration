@@ -87,7 +87,7 @@ else
   info "# Reusing server configuration at: $config_dir (remove directory to regenerate)"
 fi
 
-info "# Launch server..."
+info "# Launch server (logs in $mss)..."
 cd $m4is
 rm -f dbh2.mv.db
 sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &> $mss &
@@ -125,8 +125,10 @@ function device_wait_for_logs() {
 
 server_wait_for_logs ".*started at http:.*"
 
+info "Simulating (logs in $slo)..."
 ./simulate $config_dir/simulate.prof 0 1000 &> $slo &
 
+info "Waiting for simulator to get stable..."
 sleep 10
 
 function device_assert_logs() {
@@ -137,11 +139,11 @@ function device_assert_logs() {
     echo "true"
   fi
 }
-function clear_logs() {
+function device_clear_logs() {
   echo "" > $slo
 }
 
-function send_command() {
+function device_send_command() {
   local cmnd="$1"
   info "# Inserting $cmnd..."
   echo "$cmnd" > $cmd_file.tmp
@@ -150,11 +152,13 @@ function send_command() {
 
 #device_wait_for_logs ".*.tmp.commands.list.*"
 
+info "Executing commands and asserts..."
+
 while IFS= read -r line
 do
   cmnd=$(echo "$line" | awk -F^ '{print $1}')
   expt=$(echo "$line" | awk -F^ '{print $2}')
-  send_command "$cmnd"
+  device_send_command "$cmnd"
 
   sleep 2
 
@@ -169,7 +173,7 @@ do
     cat $slo
     error "# Content (end)"
   fi
-  #clear_logs
+  device_clear_logs
 done < $command_expect_file
 
 kill_processes
