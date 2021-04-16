@@ -69,8 +69,6 @@ mss=$root_dir/mss.log
 slo=$root_dir/slo.log
 cmd_file=/tmp/commands.list
 
-server_port=$(cat $m4is/src/main/resources/defaultconfig/application.conf | grep port | awk '{print $3}')
-
 cd $root_dir
 
 kill_processes
@@ -109,10 +107,23 @@ else
   info "# Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
 fi
 
-while ! nc -z localhost $server_port; do
-  debug "Waiting for main4ino-server to expose on port $server_port ..."
-  sleep 3 # wait for 1/10 of the second before check again
-done
+function wait_for_logs() {
+  local expr="$1"
+  local logs="$2"
+  while [ $(egrep "$expr" "$logs" | wc -l) == "0" ] ; do
+    debug "Waiting for $logs to match: $expr ..."
+    sleep 1 
+  done
+  info "Matched in $logs: $expr ..."
+}
+function server_wait_for_logs() {
+  wait_for_logs "$1" "$mss"
+}
+function device_wait_for_logs() {
+  wait_for_logs "$1" "$slo"
+}
+
+server_wait_for_logs ".*started at http:.*"
 
 ./simulate $config_dir/simulate.prof 0 1000 &> $slo &
 
@@ -126,14 +137,15 @@ function device_assert_logs() {
     echo "true"
   fi
 }
-function device_wait_for_logs() {
-  while [ $(egrep "$1" "$slo" | wc -l) == "0" ] ; do
-    debug "Waiting for device match: $1 ..."
-    sleep 1 
-  done
-}
 function clear_logs() {
   echo "" > $slo
+}
+
+function send_command() {
+  local cmnd="$1"
+  info "# Inserting $cmnd..."
+  echo "$cmnd" > $cmd_file.tmp
+  mv $cmd_file.tmp  $cmd_file
 }
 
 #device_wait_for_logs ".*.tmp.commands.list.*"
@@ -142,8 +154,7 @@ while IFS= read -r line
 do
   cmnd=$(echo "$line" | awk -F^ '{print $1}')
   expt=$(echo "$line" | awk -F^ '{print $2}')
-  info "# Inserting $cmnd (expecting $expt)..."
-  echo "$cmnd" > $cmd_file
+  send_command "$cmnd"
 
   sleep 2
 
@@ -158,7 +169,7 @@ do
     cat $slo
     error "# Content (end)"
   fi
-  clear_logs
+  #clear_logs
 done < $command_expect_file
 
 kill_processes
