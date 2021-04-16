@@ -1,2 +1,2 @@
-help^int
-exit^exit
+help^.*int.*
+exit^.*exit.*

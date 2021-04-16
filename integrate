@@ -5,7 +5,8 @@ set -u
 #set -x
 
 
-kill_processes() {
+function kill_processes() {
+  info "# Killing processes..."
   set +e
   killall .simulator.bin
   jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill -9 %
@@ -27,6 +28,10 @@ function highlight() {
   fg_c=$(echo -e "\e[1;${fg_color_map[$1]}m")
   c_rs=$'\e[0m'
   sed -u s"/$2/$fg_c\0$c_rs/g"
+}
+
+function debug() {
+  echo "$1" | highlight gray ".*"
 }
 
 function info() {
@@ -87,7 +92,7 @@ fi
 info "# Launch server..."
 cd $m4is
 rm -f dbh2.mv.db
-sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' 1>&2 | tee $mss &
+sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &> $mss &
 
 cd $root_dir/arduino-project
 if [ ! -e $config_dir/simulate.prof ]
@@ -105,7 +110,7 @@ else
 fi
 
 while ! nc -z localhost $server_port; do
-  info "Waiting for main4ino-server to expose on port $server_port ..."
+  debug "Waiting for main4ino-server to expose on port $server_port ..."
   sleep 3 # wait for 1/10 of the second before check again
 done
 
@@ -113,9 +118,17 @@ done
 
 sleep 10
 
+function device_assert_logs() {
+  if [ $(egrep "$1" "$slo" | wc -l) == "0" ]
+  then
+    echo "false"
+  else
+    echo "true"
+  fi
+}
 function device_wait_for_logs() {
   while [ $(egrep "$1" "$slo" | wc -l) == "0" ] ; do
-    info "Waiting for device match: $1 ..."
+    debug "Waiting for device match: $1 ..."
     sleep 1 
   done
 }
@@ -127,20 +140,23 @@ function clear_logs() {
 
 while IFS= read -r line
 do
-  sleep 1
   cmnd=$(echo "$line" | awk -F^ '{print $1}')
   expt=$(echo "$line" | awk -F^ '{print $2}')
-  echo $cmnd > $cmd_file
+  info "# Inserting $cmnd (expecting $expt)..."
+  echo "$cmnd" > $cmd_file
+
+  sleep 2
 
   device_wait_for_logs ".*Command:..$cmnd.*"
 
-  if [[ $(cat $slo) =~ .*Detected:..$cmnd..*$expt.* ]]
+  if [ $(device_assert_logs "$expt") == "true" ]
   then
     info "# Matched $cmnd / $expt..."
   else
     error "# Did not match $cmnd / $expt..."
-    error "# Content:"
-    cat $slo | highlight red ".*"
+    error "# Content (begin):"
+    cat $slo
+    error "# Content (end)"
   fi
   clear_logs
 done < $command_expect_file
