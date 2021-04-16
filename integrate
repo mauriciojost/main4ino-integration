@@ -111,7 +111,19 @@ done
 
 ./simulate $config_dir/simulate.prof 0 1000 &> $slo &
 
-sleep 10 
+sleep 10
+
+function device_wait_for_logs() {
+  while [ $(egrep "$1" "$slo" | wc -l) == "0" ] ; do
+    info "Waiting for device match: $1 ..."
+    sleep 1 
+  done
+}
+function clear_logs() {
+  echo "" > $slo
+}
+
+#device_wait_for_logs ".*.tmp.commands.list.*"
 
 while IFS= read -r line
 do
@@ -120,10 +132,7 @@ do
   expt=$(echo "$line" | awk -F^ '{print $2}')
   echo $cmnd > $cmd_file
 
-  while ! [[ $(cat $slo) =~ .*Command:..$cmnd.* ]] ; do
-    info "Waiting for $cmnd ..."
-    sleep 1 
-  done
+  device_wait_for_logs ".*Command:..$cmnd.*"
 
   if [[ $(cat $slo) =~ .*Detected:..$cmnd..*$expt.* ]]
   then
@@ -133,7 +142,7 @@ do
     error "# Content:"
     cat $slo | highlight red ".*"
   fi
-  echo "" > $slo
+  clear_logs
 done < $command_expect_file
 
 kill_processes
