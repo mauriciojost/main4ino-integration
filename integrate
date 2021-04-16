@@ -2,26 +2,53 @@
 
 set -e
 set -u
-set -x
+#set -x
 
 
-
-function usage() {
-    log "assembly_sbt.sh [ -a airline ] [ -t target1,target2,...,targetn ] [ -s sbtopts ] [ -c ] [ -l ]"
+kill_processes() {
+  set +e
+  killall .simulator.bin
+  jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill -9 %
+  set -e
 }
 
-while getopts "a:t:s:p:cdoliz" OPT; do
+# for highlighting
+declare -A fg_color_map
+fg_color_map[black]=30
+fg_color_map[red]=31
+fg_color_map[green]=32
+fg_color_map[yellow]=33
+fg_color_map[blue]=34
+fg_color_map[magenta]=35
+fg_color_map[cyan]=36
+fg_color_map[gray]=90
+
+function highlight() {
+  fg_c=$(echo -e "\e[1;${fg_color_map[$1]}m")
+  c_rs=$'\e[0m'
+  sed -u s"/$2/$fg_c\0$c_rs/g"
+}
+
+function info() {
+  echo "$1" | highlight green ".*"
+}
+
+function warn() {
+  echo "$1" | highlight yellow ".*"
+}
+
+function error() {
+  echo "$1" | highlight red ".*"
+}
+
+function usage() {
+    error "integrate [ -e command_expect_file ]"
+    exit 1
+}
+
+while getopts "e:" OPT; do
     case "$OPT" in
-        a) AIRLINE_CODE="${OPTARG}";;
-        t) TARGETS_STR="${OPTARG}";;
-        s) SBTOPTS="${OPTARG}";;
-        c) COVERAGE="coverage";;
-        d) PUBLISH_DOC="Y";;
-        p) PROJECT_ID="${OPTARG}";;
-        o) OVERRIDE="Y";;
-        l) CROSS_COMPILE="+";;
-        i) IGNORE_TESTS="Y";;
-        z) PUBLISH_ASSEMBLY="N";;
+        e) command_expect_file="$(readlink -e ${OPTARG})";;
         *) usage; exit 1;;
     esac
 done
@@ -32,53 +59,84 @@ export TERM=xterm-color
 root_dir=$(readlink -e $(dirname $0))
 config_dir=$root_dir/config
 m4is=$root_dir/main4ino-server
+msu=$root_dir/msu.log
+mss=$root_dir/mss.log
+slo=$root_dir/slo.log
+cmd_file=/tmp/commands.list
 
 server_port=$(cat $m4is/src/main/resources/defaultconfig/application.conf | grep port | awk '{print $3}')
 
 cd $root_dir
 
-echo "# Pull integrator dependencies..."
+kill_processes
+
+info "# Pull integrator dependencies..."
 git submodule update --init --recursive
 
 if [ ! -d $config_dir ]
 then
-  echo "# Generating server configuration at: $config_dir..."
+  info "# Generating server configuration at: $config_dir..."
   mkdir -p $config_dir
-  bash $m4is/misc/scripts/configgen/update 1>&2 | tee $root_dir/msu.log 
+  bash $m4is/misc/scripts/configgen/update 1>&2 | tee $msh 
   cp -f $m4is/misc/scripts/configgen/security.conf $config_dir
   cp -f $m4is/src/main/resources/defaultconfig/* $config_dir
 else
-  echo "# Reusing server configuration at: $config_dir (remove directory to regenerate)"
+  info "# Reusing server configuration at: $config_dir (remove directory to regenerate)"
 fi
 
-echo "# Launch server..."
-jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill -9 %
+info "# Launch server..."
 cd $m4is
 rm -f dbh2.mv.db
-sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' 1>&2 | tee $root_dir/mss.log &
+sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' 1>&2 | tee $mss &
 
 cd $root_dir/arduino-project
 if [ ! -e $config_dir/simulate.prof ]
 then
-  echo "# Pull arduino-project dependencies..."
+  info "# Pull arduino-project dependencies..."
   ./.mavarduino/create_links
   ./pull_dependencies -p -l
-  echo "# Generate arduino-project configuration..."
+  info "# Generate arduino-project configuration..."
   cat profiles/simulate.prof | grep -v MAIN4INOSERVER_API_HOST_BASE | grep -v  SIMULATOR_ > $config_dir/simulate.prof 
   echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
   echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
   echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
 else
-  echo "# Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
+  info "# Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
 fi
 
 while ! nc -z localhost $server_port; do
-  echo "Waiting for main4ino-server to expose on port $server_port ..."
-  sleep 1 # wait for 1/10 of the second before check again
+  info "Waiting for main4ino-server to expose on port $server_port ..."
+  sleep 3 # wait for 1/10 of the second before check again
 done
 
+./simulate $config_dir/simulate.prof 0 1000 &> $slo &
 
-./simulate $config_dir/simulate.prof 0 1000
+sleep 10 
 
-echo '# Done.'
+while IFS= read -r line
+do
+  sleep 1
+  cmnd=$(echo "$line" | awk -F^ '{print $1}')
+  expt=$(echo "$line" | awk -F^ '{print $2}')
+  echo $cmnd > $cmd_file
+
+  while ! [[ $(cat $slo) =~ .*Command:..$cmnd.* ]] ; do
+    info "Waiting for $cmnd ..."
+    sleep 1 
+  done
+
+  if [[ $(cat $slo) =~ .*Detected:..$cmnd..*$expt.* ]]
+  then
+    info "# Matched $cmnd / $expt..."
+  else
+    error "# Did not match $cmnd / $expt..."
+    error "# Content:"
+    cat $slo | highlight red ".*"
+  fi
+  echo "" > $slo
+done < $command_expect_file
+
+kill_processes
+
+info '# Done.'
 
