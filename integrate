@@ -6,7 +6,7 @@ set -u
 
 
 function kill_processes() {
-  info "# Killing processes..."
+  info "Killing processes..."
   set +e
   killall .simulator.bin
   jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill -9 %
@@ -34,12 +34,16 @@ function debug() {
   echo "$1" | highlight gray ".*"
 }
 
+function logstep() {
+  echo "### $1" | highlight green ".*"
+}
+
 function info() {
-  echo "$1" | highlight green ".*"
+  echo "$1" | highlight yellow ".*"
 }
 
 function warn() {
-  echo "$1" | highlight yellow ".*"
+  echo "$1" | highlight magenta ".*"
 }
 
 function error() {
@@ -73,21 +77,21 @@ cd $root_dir
 
 kill_processes
 
-info "# Pull integrator dependencies..."
+logstep "Pull integrator dependencies..."
 git submodule update --init --recursive
 
 if [ ! -d $config_dir ]
 then
-  info "# Generating server configuration at: $config_dir..."
+  logstep "Generating server configuration at: $config_dir..."
   mkdir -p $config_dir
   bash $m4is/misc/scripts/configgen/update 1>&2 | tee $msh 
   cp -f $m4is/misc/scripts/configgen/security.conf $config_dir
   cp -f $m4is/src/main/resources/defaultconfig/* $config_dir
 else
-  info "# Reusing server configuration at: $config_dir (remove directory to regenerate)"
+  logstep "Reusing server configuration at: $config_dir (remove directory to regenerate)"
 fi
 
-info "# Launch server (logs in $mss)..."
+logstep "Launch server (logs in $mss)..."
 cd $m4is
 rm -f dbh2.mv.db
 sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &> $mss &
@@ -95,16 +99,16 @@ sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &> $mss &
 cd $root_dir/arduino-project
 if [ ! -e $config_dir/simulate.prof ]
 then
-  info "# Pull arduino-project dependencies..."
+  logstep "Pull arduino-project dependencies..."
   ./.mavarduino/create_links
   ./pull_dependencies -p -l
-  info "# Generate arduino-project configuration..."
+  logstep "Generate arduino-project configuration..."
   cat profiles/simulate.prof | grep -v MAIN4INOSERVER_API_HOST_BASE | grep -v  SIMULATOR_ > $config_dir/simulate.prof 
   echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
   echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
   echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
 else
-  info "# Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
+  logstep "Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
 fi
 
 function wait_for_logs() {
@@ -125,7 +129,7 @@ function device_wait_for_logs() {
 
 server_wait_for_logs ".*started at http:.*"
 
-info "Simulating (logs in $slo)..."
+logstep "Simulating (logs in $slo)..."
 ./simulate $config_dir/simulate.prof 0 1000 &> $slo &
 
 info "Waiting for simulator to get stable..."
@@ -145,14 +149,14 @@ function device_clear_logs() {
 
 function device_send_command() {
   local cmnd="$1"
-  info "# Inserting $cmnd..."
+  info "Sending command '$cmnd'..."
   echo "$cmnd" > $cmd_file.tmp
   mv $cmd_file.tmp  $cmd_file
 }
 
 #device_wait_for_logs ".*.tmp.commands.list.*"
 
-info "Executing commands and asserts..."
+logstep "Executing commands and asserts..."
 
 while IFS= read -r line
 do
@@ -166,17 +170,17 @@ do
 
   if [ $(device_assert_logs "$expt") == "true" ]
   then
-    info "# Matched $cmnd / $expt..."
+    info "Matched $cmnd / $expt..."
   else
-    error "# Did not match $cmnd / $expt..."
-    error "# Content (begin):"
+    error "Did not match $cmnd / $expt..."
+    error "Content (begin):"
     cat $slo
-    error "# Content (end)"
+    error "Content (end)"
   fi
   device_clear_logs
 done < $command_expect_file
 
 kill_processes
 
-info '# Done.'
+logstep 'Done.'
 
