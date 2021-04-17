@@ -11,13 +11,15 @@ function kill_server() {
   set +e
   jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill -9 %
   set -e
+  sleep 1
 }
 
 function kill_device() {
   info "Killing device..."
   set +e
-  killall -9 .simulator.bin
+  killall -9 .mavarduino.simulator.bin
   set -e
+  sleep 1
 }
 
 
@@ -84,6 +86,7 @@ cd $root_dir
 if [ "$devmode" == "true" ]
 then
   logstep "DEV mode (reusing server)..."
+  kill_device
 else
   kill_server
   kill_device
