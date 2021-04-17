@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -e
+set -u
+#set -x
+
+source highlight.sh
+
+logstep "Pull integrator dependencies..."
+git submodule update --init --recursive
+logstep 'Done.'
+

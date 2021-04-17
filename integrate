@@ -90,8 +90,6 @@ then
 else
   kill_server
   kill_device
-  logstep "Pull integrator dependencies..."
-  git submodule update --init --recursive
 
   if [ ! -d $config_dir ]
   then
