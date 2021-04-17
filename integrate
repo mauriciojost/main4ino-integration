@@ -146,7 +146,7 @@ do
 
   sleep 2
 
-  device_wait_for_logs "^.*###COMMAND: $cmnd$"
+  device_wait_for_logs "^###COMMAND: $cmnd$"
 
   if [ $(device_assert_logs "$expt") == "true" ]
   then
