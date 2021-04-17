@@ -128,7 +128,7 @@ fi
 server_wait_for_logs ".*started at http:.*"
 
 logstep "Simulating (logs in $slo)..."
-./simulate $config_dir/simulate.prof 0 1000 &> $slo &
+./simulate -p $config_dir/simulate.prof -a "0 1000" &> $slo &
 
 info "Waiting for simulator to get stable..."
 sleep 10
@@ -146,7 +146,7 @@ do
 
   sleep 2
 
-  device_wait_for_logs ".*Command:..$cmnd.*"
+  device_wait_for_logs "^.*###COMMAND: $cmnd$"
 
   if [ $(device_assert_logs "$expt") == "true" ]
   then
