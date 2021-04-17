@@ -64,10 +64,12 @@ function device_send_command() {
 }
 
 devmode="false"
-while getopts "e:d" OPT; do
+log_iteration_max_lines=10
+while getopts "e:dl:" OPT; do
     case "$OPT" in
         e) command_expect_file="$(readlink -e ${OPTARG})";;
         d) devmode="true";;
+        l) log_iteration_max_lines="${OPTARG}";;
         *) usage; exit 1;;
     esac
 done
@@ -149,6 +151,9 @@ do
   if [ $(device_assert_logs "$expt") == "true" ]
   then
     info "Matched $cmnd / $expt..."
+    debug "Content (begin):"
+    cat $slo | tail -$log_iteration_max_lines | highlight gray '.*'
+    debug "Content (end)"
   else
     error "Did not match $cmnd / $expt..."
     error "Content (begin):"
