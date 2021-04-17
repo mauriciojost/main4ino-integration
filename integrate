@@ -4,112 +4,27 @@ set -e
 set -u
 #set -x
 
+source highlight.sh
 
-function kill_processes() {
-  info "Killing processes..."
+function kill_server() {
+  info "Killing server..."
   set +e
-  killall .simulator.bin
   jps -l | grep sbt-launch.jar | cut -d' ' -f 1 | xargs -I% kill -9 %
   set -e
 }
 
-# for highlighting
-declare -A fg_color_map
-fg_color_map[black]=30
-fg_color_map[red]=31
-fg_color_map[green]=32
-fg_color_map[yellow]=33
-fg_color_map[blue]=34
-fg_color_map[magenta]=35
-fg_color_map[cyan]=36
-fg_color_map[gray]=90
-
-function highlight() {
-  fg_c=$(echo -e "\e[1;${fg_color_map[$1]}m")
-  c_rs=$'\e[0m'
-  sed -u s"/$2/$fg_c\0$c_rs/g"
+function kill_device() {
+  info "Killing device..."
+  set +e
+  killall -9 .simulator.bin
+  set -e
 }
 
-function debug() {
-  echo "$1" | highlight gray ".*"
-}
-
-function logstep() {
-  echo "### $1" | highlight green ".*"
-}
-
-function info() {
-  echo "$1" | highlight yellow ".*"
-}
-
-function warn() {
-  echo "$1" | highlight magenta ".*"
-}
-
-function error() {
-  echo "$1" | highlight red ".*"
-}
 
 function usage() {
     error "integrate [ -e command_expect_file ]"
     exit 1
 }
-
-while getopts "e:" OPT; do
-    case "$OPT" in
-        e) command_expect_file="$(readlink -e ${OPTARG})";;
-        *) usage; exit 1;;
-    esac
-done
-
-
-export TERM=xterm-color
-
-root_dir=$(readlink -e $(dirname $0))
-config_dir=$root_dir/config
-m4is=$root_dir/main4ino-server
-msu=$root_dir/msu.log
-mss=$root_dir/mss.log
-slo=$root_dir/slo.log
-cmd_file=/tmp/commands.list
-
-cd $root_dir
-
-kill_processes
-
-logstep "Pull integrator dependencies..."
-git submodule update --init --recursive
-
-if [ ! -d $config_dir ]
-then
-  logstep "Generating server configuration at: $config_dir..."
-  mkdir -p $config_dir
-  bash $m4is/misc/scripts/configgen/update 1>&2 | tee $msh 
-  cp -f $m4is/misc/scripts/configgen/security.conf $config_dir
-  cp -f $m4is/src/main/resources/defaultconfig/* $config_dir
-else
-  logstep "Reusing server configuration at: $config_dir (remove directory to regenerate)"
-fi
-
-logstep "Launch server (logs in $mss)..."
-cd $m4is
-rm -f dbh2.mv.db
-sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &> $mss &
-
-cd $root_dir/arduino-project
-if [ ! -e $config_dir/simulate.prof ]
-then
-  logstep "Pull arduino-project dependencies..."
-  ./.mavarduino/create_links
-  ./pull_dependencies -p -l
-  logstep "Generate arduino-project configuration..."
-  cat profiles/simulate.prof | grep -v MAIN4INOSERVER_API_HOST_BASE | grep -v  SIMULATOR_ > $config_dir/simulate.prof 
-  echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
-  echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
-  echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
-else
-  logstep "Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
-fi
 
 function wait_for_logs() {
   local expr="$1"
@@ -126,14 +41,6 @@ function server_wait_for_logs() {
 function device_wait_for_logs() {
   wait_for_logs "$1" "$slo"
 }
-
-server_wait_for_logs ".*started at http:.*"
-
-logstep "Simulating (logs in $slo)..."
-./simulate $config_dir/simulate.prof 0 1000 &> $slo &
-
-info "Waiting for simulator to get stable..."
-sleep 10
 
 function device_assert_logs() {
   if [ $(egrep "$1" "$slo" | wc -l) == "0" ]
@@ -153,6 +60,76 @@ function device_send_command() {
   echo "$cmnd" > $cmd_file.tmp
   mv $cmd_file.tmp  $cmd_file
 }
+
+devmode="false"
+while getopts "e:d" OPT; do
+    case "$OPT" in
+        e) command_expect_file="$(readlink -e ${OPTARG})";;
+        d) devmode="true";;
+        *) usage; exit 1;;
+    esac
+done
+
+
+root_dir=$(readlink -e $(dirname $0))
+config_dir=$root_dir/config
+m4is=$root_dir/main4ino-server
+msu=$root_dir/msu.log
+mss=$root_dir/mss.log
+slo=$root_dir/slo.log
+cmd_file=/tmp/commands.list
+
+cd $root_dir
+
+if [ "$devmode" == "true" ]
+then
+  logstep "DEV mode (reusing server)..."
+else
+  kill_server
+  kill_device
+  logstep "Pull integrator dependencies..."
+  git submodule update --init --recursive
+
+  if [ ! -d $config_dir ]
+  then
+    logstep "Generating server configuration at: $config_dir..."
+    mkdir -p $config_dir
+    bash $m4is/misc/scripts/configgen/update 1>&2 | tee $msh 
+    cp -f $m4is/misc/scripts/configgen/security.conf $config_dir
+    cp -f $m4is/src/main/resources/defaultconfig/* $config_dir
+  else
+    logstep "Reusing server configuration at: $config_dir (remove directory to regenerate)"
+  fi
+
+  logstep "Launch server (logs in $mss)..."
+  cd $m4is
+  rm -f dbh2.mv.db
+  sbt -Dconfig-dir=$config_dir 'runMain org.mauritania.main4ino.Server' &> $mss &
+fi
+
+cd $root_dir/arduino-project
+if [ ! -e $config_dir/simulate.prof ]
+then
+  logstep "Pull arduino-project dependencies..."
+  ./.mavarduino/create_links
+  ./pull_dependencies -p -l
+  logstep "Generate arduino-project configuration..."
+  cat profiles/simulate.prof | grep -v MAIN4INOSERVER_API_HOST_BASE | grep -v  SIMULATOR_ > $config_dir/simulate.prof 
+  echo '-D MAIN4INOSERVER_API_HOST_BASE="http://localhost:8080"' >> $config_dir/simulate.prof
+  echo '-D SIMULATOR_LOGIN="admin"' >> $config_dir/simulate.prof
+  echo '-D SIMULATOR_PASS="password"' >> $config_dir/simulate.prof
+else
+  logstep "Reusing arduino-project dependencies and configuration (remove $config_dir/simulate.prof to regenerate)..."
+fi
+
+server_wait_for_logs ".*started at http:.*"
+
+logstep "Simulating (logs in $slo)..."
+./simulate $config_dir/simulate.prof 0 1000 &> $slo &
+
+info "Waiting for simulator to get stable..."
+sleep 10
+
 
 #device_wait_for_logs ".*.tmp.commands.list.*"
 
@@ -179,8 +156,6 @@ do
   fi
   device_clear_logs
 done < $command_expect_file
-
-kill_processes
 
 logstep 'Done.'
 
