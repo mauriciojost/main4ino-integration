@@ -1,2 +1,5 @@
 help^.*int.*
+getp^.*botino.*
+setp body r0 never:aa^.*Cmd match.*
+getp^.*botino.*
 exit^.*exit.*
